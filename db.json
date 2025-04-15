@@ -1,0 +1,87 @@
+{
+    "locations": [
+      { "id": 1, "name": "New York", "country": "USA", "latitude": 40.7128, "longitude": -74.0060 },
+      { "id": 2, "name": "London", "country": "UK", "latitude": 51.5074, "longitude": -0.1278 },
+      { "id": 3, "name": "Tokyo", "country": "Japan", "latitude": 35.6762, "longitude": 139.6503 },
+      { "id": 4, "name": "Sydney", "country": "Australia", "latitude": -33.8688, "longitude": 151.2093 },
+      { "id": 5, "name": "Rio de Janeiro", "country": "Brazil", "latitude": -22.9068, "longitude": -43.1729 }
+    ],
+  
+    "weather_stations": [
+      { "id": 1, "locationId": 1, "name": "NYC Central Park" },
+      { "id": 2, "locationId": 1, "name": "NYC JFK Airport" },
+      { "id": 3, "locationId": 2, "name": "London Heathrow" },
+      { "id": 4, "locationId": 3, "name": "Tokyo Shinjuku" },
+      { "id": 5, "locationId": 4, "name": "Sydney Observatory" },
+      { "id": 6, "locationId": 5, "name": "Rio Downtown" }
+    ],
+  
+    "weather_data": [
+      {
+        "id": 1,
+        "stationId": 1,
+        "timestamp": "2025-04-15T08:00:00",
+        "temperature": 22.5,
+        "humidity": 65,
+        "pressure": 1012.3,
+        "wind_speed": 5.2,
+        "wind_direction": "NE",
+        "precipitation": 0
+      },
+      {
+        "id": 2,
+        "stationId": 3,
+        "timestamp": "2025-04-15T08:00:00", 
+        "temperature": 18.2,
+        "humidity": 72,
+        "pressure": 1008.7,
+        "wind_speed": 7.8,
+        "wind_direction": "SW",
+        "precipitation": 1.2
+      }
+    ],
+  
+    "alerts": [
+      {
+        "id": 1,
+        "locationId": 1,
+        "alert_type": "high_temperature",
+        "severity": "moderate",
+        "message": "Unusually high temperatures expected",
+        "start_time": "2025-04-15T12:00:00",
+        "end_time": "2025-04-15T20:00:00"
+      },
+      {
+        "id": 2,
+        "locationId": 3,
+        "alert_type": "heavy_rain",
+        "severity": "severe",
+        "message": "Heavy rainfall warning",
+        "start_time": "2025-04-16T06:00:00",
+        "end_time": "2025-04-16T18:00:00"
+      }
+    ],
+  
+    "forecast": [
+      {
+        "id": 1,
+        "locationId": 1,
+        "date": "2025-04-16",
+        "high_temp": 25.3,
+        "low_temp": 18.7,
+        "humidity": 68,
+        "conditions": "partly cloudy",
+        "precipitation_chance": 20
+      },
+      {
+        "id": 2,
+        "locationId": 2,
+        "date": "2025-04-16",
+        "high_temp": 19.8,
+        "low_temp": 12.5,
+        "humidity": 75,
+        "conditions": "light rain",
+        "precipitation_chance": 60
+      }
+    ]
+  }
