@@ -1,0 +1,41 @@
+version: '3'
+
+services:
+  kafka:
+    image: apache/kafka
+    container_name: kafka_dbt
+    ports:
+      - "9092:9092"
+    environment:
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    networks:
+      - weather-network
+
+  mysql:
+    image: mysql:latest
+    container_name: mysql-dbt_container
+    environment:
+      - MYSQL_ROOT_PASSWORD=password
+      - MYSQL_DATABASE=weather_monitoring
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_dbt_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - weather-network
+
+  json-server:
+    image: json-server-weather
+    container_name: json-server-dbt_container
+    ports:
+      - "3000:3000"
+    networks:
+      - weather-network
+
+networks:
+  weather-network:
+    driver: bridge
+
+volumes:
+  mysql_dbt_data:
