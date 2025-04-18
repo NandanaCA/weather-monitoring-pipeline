@@ -22,7 +22,13 @@ docker exec -it mysql-container mysql -u root -p
 
 ## Run/Process batch processing data:
 ```bash
-./batch.sh
+./rbatch.sh
+
+```
+
+## Run Stream processing data:
+```bash
+./rstream.sh
 
 ```
 
