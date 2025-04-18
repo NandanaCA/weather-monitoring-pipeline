@@ -1,9 +1,11 @@
 import json
 import os
+import time
 from datetime import datetime
 
 import pymysql
 from confluent_kafka import Consumer, KafkaException
+from confluent_kafka.admin import AdminClient, NewTopic
 
 KAFKA_BROKER = os.environ.get("KAFKA_BROKER", "kafka:9092")
 MYSQL_HOST = os.environ.get("MYSQL_HOST", "mysql-container")
@@ -24,6 +26,29 @@ db = pymysql.connect(
     cursorclass=pymysql.cursors.DictCursor,
     autocommit=True,
 )
+
+
+def wait_for_topics(topics, max_retries=30, retry_interval=5):
+    """Wait for Kafka topics to be created before subscribing."""
+    print(f"Waiting for topics to be created: {topics}")
+
+    admin_client = AdminClient({"bootstrap.servers": KAFKA_BROKER})
+
+    for attempt in range(max_retries):
+        existing_topics = admin_client.list_topics(timeout=10).topics
+        missing_topics = [topic for topic in topics if topic not in existing_topics]
+
+        if not missing_topics:
+            print(f"All required topics exist: {topics}")
+            return True
+
+        print(
+            f"Attempt {attempt+1}/{max_retries}: Waiting for topics: {missing_topics}"
+        )
+        time.sleep(retry_interval)
+
+    print(f"Timed out waiting for topics: {missing_topics}")
+    return False
 
 
 def create_tables():
@@ -92,6 +117,7 @@ consumer = Consumer(
     }
 )
 
+wait_for_topics(TOPICS)
 consumer.subscribe(TOPICS)
 
 print(f"🔍 Listening to Kafka topics: {TOPICS}...")
