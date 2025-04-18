@@ -46,7 +46,7 @@ def main():
         # Read from Kafka
         kafka_df = (
             spark.readStream.format("kafka")
-            .option("kafka.bootstrap.servers", "kafka_dbt:9092")
+            .option("kafka.bootstrap.servers", "kafka:9092")
             .option("subscribe", "weather_data")
             .option("startingOffsets", "latest")
             .load()

@@ -17,7 +17,7 @@ pip install cryptography
 
 ## Access MySQL
 ```bash
-docker exec -it mysql mysql -u root -p
+docker exec -it mysql-container mysql -u root -p
 ```
 
 ## Run/Process batch processing data:

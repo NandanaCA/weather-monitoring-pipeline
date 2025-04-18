@@ -9,7 +9,7 @@ def main():
 
     try:
         # Read data from MySQL
-        jdbc_url = "jdbc:mysql://mysql:3306/weather_monitoring"
+        jdbc_url = "jdbc:mysql://mysql-container:3306/weather_monitoring"
 
         # Weather readings
         weather_df = (

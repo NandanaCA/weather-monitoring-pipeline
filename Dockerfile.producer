@@ -1,0 +1,17 @@
+FROM python:3.9-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    gcc \
+    libffi-dev \
+    python3-dev \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY producer.py /app/
+
+RUN pip install confluent-kafka
+
+# Use a while loop to keep the container running if the producer exits
+CMD ["sh", "-c", "python producer.py && tail -f /dev/null"]

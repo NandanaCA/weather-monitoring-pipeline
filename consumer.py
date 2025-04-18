@@ -1,29 +1,38 @@
 import json
-import pymysql
+import os
 from datetime import datetime
+
+import pymysql
 from confluent_kafka import Consumer, KafkaException
 
-KAFKA_BROKER = "localhost:9092"
+KAFKA_BROKER = os.environ.get("KAFKA_BROKER", "kafka:9092")
+MYSQL_HOST = os.environ.get("MYSQL_HOST", "mysql-container")
+MYSQL_PORT = int(os.environ.get("MYSQL_PORT", 3306))
+MYSQL_USER = os.environ.get("MYSQL_USER", "root")
+MYSQL_PASSWORD = os.environ.get("MYSQL_PASSWORD", "password")
+
 TOPICS = ["weather_data", "weather_alerts", "weather_forecast"]
 GROUP_ID = "weather-consumer-group"
 
 # MySQL Connection
 db = pymysql.connect(
-    host="localhost",
-    port=3307,
-    user="root",
-    password="password",
+    host=MYSQL_HOST,
+    port=MYSQL_PORT,
+    user=MYSQL_USER,
+    password=MYSQL_PASSWORD,
     database="weather_monitoring",
     cursorclass=pymysql.cursors.DictCursor,
-    autocommit=True
+    autocommit=True,
 )
+
 
 def create_tables():
     with db.cursor() as cursor:
         cursor.execute("DROP TABLE IF EXISTS weather_readings")
         cursor.execute("DROP TABLE IF EXISTS weather_alerts")
         cursor.execute("DROP TABLE IF EXISTS weather_forecasts")
-        cursor.execute("""
+        cursor.execute(
+            """
         CREATE TABLE IF NOT EXISTS weather_readings (
             id INT AUTO_INCREMENT PRIMARY KEY,
             station_id INT NOT NULL,
@@ -37,8 +46,10 @@ def create_tables():
             precipitation DECIMAL(5,1),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-        """)
-        cursor.execute("""
+        """
+        )
+        cursor.execute(
+            """
         CREATE TABLE IF NOT EXISTS weather_alerts (
             id INT AUTO_INCREMENT PRIMARY KEY,
             location_id INT NOT NULL,
@@ -50,8 +61,10 @@ def create_tables():
             end_time DATETIME NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-        """)
-        cursor.execute("""
+        """
+        )
+        cursor.execute(
+            """
         CREATE TABLE IF NOT EXISTS weather_forecasts (
             id INT AUTO_INCREMENT PRIMARY KEY,
             location_id INT NOT NULL,
@@ -64,7 +77,9 @@ def create_tables():
             precipitation_chance INT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-        """)
+        """
+        )
+
 
 # Run table creation before consuming
 create_tables()
@@ -81,6 +96,7 @@ consumer.subscribe(TOPICS)
 
 print(f"🔍 Listening to Kafka topics: {TOPICS}...")
 
+
 def insert_weather_data(weather_data):
     try:
         with db.cursor() as cursor:
@@ -91,19 +107,23 @@ def insert_weather_data(weather_data):
                 precipitation
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
-            cursor.execute(query, (
-                weather_data['station_id'],
-                weather_data['location'],
-                weather_data['timestamp'],
-                weather_data['temperature'],
-                weather_data['humidity'],
-                weather_data['pressure'],
-                weather_data['wind_speed'],
-                weather_data['wind_direction'],
-                weather_data['precipitation']
-            ))
+            cursor.execute(
+                query,
+                (
+                    weather_data["station_id"],
+                    weather_data["location"],
+                    weather_data["timestamp"],
+                    weather_data["temperature"],
+                    weather_data["humidity"],
+                    weather_data["pressure"],
+                    weather_data["wind_speed"],
+                    weather_data["wind_direction"],
+                    weather_data["precipitation"],
+                ),
+            )
     except Exception as e:
         print(f"MySQL insert error (weather data): {e}")
+
 
 def insert_alert(alert):
     try:
@@ -114,17 +134,21 @@ def insert_alert(alert):
                 message, start_time, end_time
             ) VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
-            cursor.execute(query, (
-                alert['location_id'],
-                alert['location'],
-                alert['alert_type'],
-                alert['severity'],
-                alert['message'],
-                alert['start_time'],
-                alert['end_time']
-            ))
+            cursor.execute(
+                query,
+                (
+                    alert["location_id"],
+                    alert["location"],
+                    alert["alert_type"],
+                    alert["severity"],
+                    alert["message"],
+                    alert["start_time"],
+                    alert["end_time"],
+                ),
+            )
     except Exception as e:
         print(f"MySQL insert error (alert): {e}")
+
 
 def insert_forecast(forecast):
     try:
@@ -135,18 +159,22 @@ def insert_forecast(forecast):
                 low_temp, humidity, conditions, precipitation_chance
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """
-            cursor.execute(query, (
-                forecast['location_id'],
-                forecast['location'],
-                forecast['date'],
-                forecast['high_temp'],
-                forecast['low_temp'],
-                forecast['humidity'],
-                forecast['conditions'],
-                forecast['precipitation_chance']
-            ))
+            cursor.execute(
+                query,
+                (
+                    forecast["location_id"],
+                    forecast["location"],
+                    forecast["date"],
+                    forecast["high_temp"],
+                    forecast["low_temp"],
+                    forecast["humidity"],
+                    forecast["conditions"],
+                    forecast["precipitation_chance"],
+                ),
+            )
     except Exception as e:
         print(f"MySQL insert error (forecast): {e}")
+
 
 try:
     while True:
@@ -162,49 +190,59 @@ try:
         data = json.loads(msg.value().decode("utf-8"))
 
         print(f"\nReceived message from {topic}:")
-        
+
         if topic == "weather_data":
             if data.get("event") == "Weather Reading":
-                print(f"Weather data from {data.get('location')} - Station: {data.get('station_id')}")
+                print(
+                    f"Weather data from {data.get('location')} - Station: {data.get('station_id')}"
+                )
                 weather_data = {
-                    'station_id': data.get('station_id'),
-                    'location': data.get('location'),
-                    'timestamp': data.get('data', {}).get('timestamp', datetime.now().isoformat()),
-                    'temperature': data.get('data', {}).get('temperature'),
-                    'humidity': data.get('data', {}).get('humidity'),
-                    'pressure': data.get('data', {}).get('pressure'),
-                    'wind_speed': data.get('data', {}).get('wind_speed'),
-                    'wind_direction': data.get('data', {}).get('wind_direction'),
-                    'precipitation': data.get('data', {}).get('precipitation')
+                    "station_id": data.get("station_id"),
+                    "location": data.get("location"),
+                    "timestamp": data.get("data", {}).get(
+                        "timestamp", datetime.now().isoformat()
+                    ),
+                    "temperature": data.get("data", {}).get("temperature"),
+                    "humidity": data.get("data", {}).get("humidity"),
+                    "pressure": data.get("data", {}).get("pressure"),
+                    "wind_speed": data.get("data", {}).get("wind_speed"),
+                    "wind_direction": data.get("data", {}).get("wind_direction"),
+                    "precipitation": data.get("data", {}).get("precipitation"),
                 }
                 insert_weather_data(weather_data)
-                
+
         elif topic == "weather_alerts":
             if data.get("event") == "Weather Alert":
-                print(f"Weather alert for {data.get('location')}: {data.get('alert', {}).get('alert_type')}")
+                print(
+                    f"Weather alert for {data.get('location')}: {data.get('alert', {}).get('alert_type')}"
+                )
                 alert = {
-                    'location_id': data.get('location_id'),
-                    'location': data.get('location'),
-                    'alert_type': data.get('alert', {}).get('alert_type'),
-                    'severity': data.get('alert', {}).get('severity'),
-                    'message': data.get('alert', {}).get('message'),
-                    'start_time': data.get('alert', {}).get('start_time'),
-                    'end_time': data.get('alert', {}).get('end_time')
+                    "location_id": data.get("location_id"),
+                    "location": data.get("location"),
+                    "alert_type": data.get("alert", {}).get("alert_type"),
+                    "severity": data.get("alert", {}).get("severity"),
+                    "message": data.get("alert", {}).get("message"),
+                    "start_time": data.get("alert", {}).get("start_time"),
+                    "end_time": data.get("alert", {}).get("end_time"),
                 }
                 insert_alert(alert)
-                
+
         elif topic == "weather_forecast":
             if data.get("event") == "Weather Forecast":
-                print(f"Weather forecast for {data.get('location')} on {data.get('forecast', {}).get('date')}")
+                print(
+                    f"Weather forecast for {data.get('location')} on {data.get('forecast', {}).get('date')}"
+                )
                 forecast = {
-                    'location_id': data.get('location_id'),
-                    'location': data.get('location'),
-                    'date': data.get('forecast', {}).get('date'),
-                    'high_temp': data.get('forecast', {}).get('high_temp'),
-                    'low_temp': data.get('forecast', {}).get('low_temp'),
-                    'humidity': data.get('forecast', {}).get('humidity'),
-                    'conditions': data.get('forecast', {}).get('conditions'),
-                    'precipitation_chance': data.get('forecast', {}).get('precipitation_chance')
+                    "location_id": data.get("location_id"),
+                    "location": data.get("location"),
+                    "date": data.get("forecast", {}).get("date"),
+                    "high_temp": data.get("forecast", {}).get("high_temp"),
+                    "low_temp": data.get("forecast", {}).get("low_temp"),
+                    "humidity": data.get("forecast", {}).get("humidity"),
+                    "conditions": data.get("forecast", {}).get("conditions"),
+                    "precipitation_chance": data.get("forecast", {}).get(
+                        "precipitation_chance"
+                    ),
                 }
                 insert_forecast(forecast)
 

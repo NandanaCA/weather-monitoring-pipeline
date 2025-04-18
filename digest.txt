@@ -1,0 +1,958 @@
+Directory structure:
+└── weather-pipeline/
+    ├── README.md
+    ├── Dockerfile
+    ├── batch.sh
+    ├── consumer.py
+    ├── db.json
+    ├── docker-compose.yml
+    ├── init.sql
+    ├── producer.py
+    ├── read_parquet.py
+    ├── simulate_weather.py
+    ├── stream.sh
+    └── spark/
+        ├── apps/
+        │   ├── batch.py
+        │   ├── streaming.py
+        │   └── jars/
+        ├── data/
+        │   └── avg_temp/
+        │       ├── _SUCCESS
+        │       ├── part-00000-e795a0f3-b791-4788-83ae-6a3d9bef919f-c000.snappy.parquet
+        │       ├── ._SUCCESS.crc
+        │       └── .part-00000-e795a0f3-b791-4788-83ae-6a3d9bef919f-c000.snappy.parquet.crc
+        └── jars/
+
+================================================
+File: README.md
+================================================
+# weather-monitoring-pipeline
+
+## Starting Containers
+```bash
+# startup
+docker compose up -d
+
+# if there are changes
+docker compose up -d --build
+```
+## Dependencies for python scripts
+```bash
+pip install confluent-kafka
+pip install pymysql
+pip install cryptography
+```
+
+## Access MySQL
+```bash
+docker exec -it mysql mysql -u root -p
+```
+
+## Run/Process batch processing data:
+```bash
+./batch.sh
+
+```
+
+## if you lose batch data run this
+```bash
+cat > read_parquet.py << EOF
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName("ReadParquet").getOrCreate()
+df = spark.read.parquet("/opt/spark/data/avg_temp")
+print("Data from parquet file:")
+df.show()
+spark.stop()
+EOF
+
+docker cp read_parquet.py spark:/tmp/read_parquet.py
+
+docker exec -it spark spark-submit --master "local[*]" /tmp/read_parquet.py
+```
+
+
+
+================================================
+File: Dockerfile
+================================================
+FROM node:18-alpine
+
+RUN npm install -g json-server
+
+WORKDIR /app
+
+COPY db.json /app/db.json
+
+EXPOSE 3000
+
+CMD ["json-server", "--watch", "db.json", "--port", "3000"]
+
+
+
+================================================
+File: batch.sh
+================================================
+#!/bin/bash
+docker exec spark spark-submit \
+  --master local[*] \
+  --jars /opt/spark/jars/mysql-connector-j-8.0.33.jar \
+  --driver-class-path /opt/spark/jars/mysql-connector-j-8.0.33.jar \
+  /opt/spark/apps/batch.py
+
+
+
+================================================
+File: consumer.py
+================================================
+import json
+import pymysql
+from datetime import datetime
+from confluent_kafka import Consumer, KafkaException
+
+KAFKA_BROKER = "localhost:9092"
+TOPICS = ["weather_data", "weather_alerts", "weather_forecast"]
+GROUP_ID = "weather-consumer-group"
+
+# MySQL Connection
+db = pymysql.connect(
+    host="localhost",
+    port=3307,
+    user="root",
+    password="password",
+    database="weather_monitoring",
+    cursorclass=pymysql.cursors.DictCursor,
+    autocommit=True
+)
+
+def create_tables():
+    with db.cursor() as cursor:
+        cursor.execute("DROP TABLE IF EXISTS weather_readings")
+        cursor.execute("DROP TABLE IF EXISTS weather_alerts")
+        cursor.execute("DROP TABLE IF EXISTS weather_forecasts")
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS weather_readings (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            station_id INT NOT NULL,
+            location VARCHAR(100) NOT NULL,
+            timestamp DATETIME NOT NULL,
+            temperature DECIMAL(5,2),
+            humidity INT,
+            pressure DECIMAL(6,1),
+            wind_speed DECIMAL(5,1),
+            wind_direction VARCHAR(2),
+            precipitation DECIMAL(5,1),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS weather_alerts (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            location_id INT NOT NULL,
+            location VARCHAR(100) NOT NULL,
+            alert_type VARCHAR(50) NOT NULL,
+            severity VARCHAR(20) NOT NULL,
+            message TEXT,
+            start_time DATETIME NOT NULL,
+            end_time DATETIME NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS weather_forecasts (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            location_id INT NOT NULL,
+            location VARCHAR(100) NOT NULL,
+            forecast_date DATE NOT NULL,
+            high_temp DECIMAL(5,2),
+            low_temp DECIMAL(5,2),
+            humidity INT,
+            conditions VARCHAR(50),
+            precipitation_chance INT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+
+# Run table creation before consuming
+create_tables()
+
+consumer = Consumer(
+    {
+        "bootstrap.servers": KAFKA_BROKER,
+        "group.id": GROUP_ID,
+        "auto.offset.reset": "earliest",
+    }
+)
+
+consumer.subscribe(TOPICS)
+
+print(f"🔍 Listening to Kafka topics: {TOPICS}...")
+
+def insert_weather_data(weather_data):
+    try:
+        with db.cursor() as cursor:
+            query = """
+            INSERT INTO weather_readings (
+                station_id, location, timestamp, temperature, 
+                humidity, pressure, wind_speed, wind_direction,
+                precipitation
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            cursor.execute(query, (
+                weather_data['station_id'],
+                weather_data['location'],
+                weather_data['timestamp'],
+                weather_data['temperature'],
+                weather_data['humidity'],
+                weather_data['pressure'],
+                weather_data['wind_speed'],
+                weather_data['wind_direction'],
+                weather_data['precipitation']
+            ))
+    except Exception as e:
+        print(f"MySQL insert error (weather data): {e}")
+
+def insert_alert(alert):
+    try:
+        with db.cursor() as cursor:
+            query = """
+            INSERT INTO weather_alerts (
+                location_id, location, alert_type, severity,
+                message, start_time, end_time
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
+            cursor.execute(query, (
+                alert['location_id'],
+                alert['location'],
+                alert['alert_type'],
+                alert['severity'],
+                alert['message'],
+                alert['start_time'],
+                alert['end_time']
+            ))
+    except Exception as e:
+        print(f"MySQL insert error (alert): {e}")
+
+def insert_forecast(forecast):
+    try:
+        with db.cursor() as cursor:
+            query = """
+            INSERT INTO weather_forecasts (
+                location_id, location, forecast_date, high_temp,
+                low_temp, humidity, conditions, precipitation_chance
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            cursor.execute(query, (
+                forecast['location_id'],
+                forecast['location'],
+                forecast['date'],
+                forecast['high_temp'],
+                forecast['low_temp'],
+                forecast['humidity'],
+                forecast['conditions'],
+                forecast['precipitation_chance']
+            ))
+    except Exception as e:
+        print(f"MySQL insert error (forecast): {e}")
+
+try:
+    while True:
+        msg = consumer.poll(1.0)
+
+        if msg is None:
+            continue
+        if msg.error():
+            print(f"Kafka error: {msg.error()}")
+            continue
+
+        topic = msg.topic()
+        data = json.loads(msg.value().decode("utf-8"))
+
+        print(f"\nReceived message from {topic}:")
+        
+        if topic == "weather_data":
+            if data.get("event") == "Weather Reading":
+                print(f"Weather data from {data.get('location')} - Station: {data.get('station_id')}")
+                weather_data = {
+                    'station_id': data.get('station_id'),
+                    'location': data.get('location'),
+                    'timestamp': data.get('data', {}).get('timestamp', datetime.now().isoformat()),
+                    'temperature': data.get('data', {}).get('temperature'),
+                    'humidity': data.get('data', {}).get('humidity'),
+                    'pressure': data.get('data', {}).get('pressure'),
+                    'wind_speed': data.get('data', {}).get('wind_speed'),
+                    'wind_direction': data.get('data', {}).get('wind_direction'),
+                    'precipitation': data.get('data', {}).get('precipitation')
+                }
+                insert_weather_data(weather_data)
+                
+        elif topic == "weather_alerts":
+            if data.get("event") == "Weather Alert":
+                print(f"Weather alert for {data.get('location')}: {data.get('alert', {}).get('alert_type')}")
+                alert = {
+                    'location_id': data.get('location_id'),
+                    'location': data.get('location'),
+                    'alert_type': data.get('alert', {}).get('alert_type'),
+                    'severity': data.get('alert', {}).get('severity'),
+                    'message': data.get('alert', {}).get('message'),
+                    'start_time': data.get('alert', {}).get('start_time'),
+                    'end_time': data.get('alert', {}).get('end_time')
+                }
+                insert_alert(alert)
+                
+        elif topic == "weather_forecast":
+            if data.get("event") == "Weather Forecast":
+                print(f"Weather forecast for {data.get('location')} on {data.get('forecast', {}).get('date')}")
+                forecast = {
+                    'location_id': data.get('location_id'),
+                    'location': data.get('location'),
+                    'date': data.get('forecast', {}).get('date'),
+                    'high_temp': data.get('forecast', {}).get('high_temp'),
+                    'low_temp': data.get('forecast', {}).get('low_temp'),
+                    'humidity': data.get('forecast', {}).get('humidity'),
+                    'conditions': data.get('forecast', {}).get('conditions'),
+                    'precipitation_chance': data.get('forecast', {}).get('precipitation_chance')
+                }
+                insert_forecast(forecast)
+
+except KeyboardInterrupt:
+    print("\nStopping consumer...")
+finally:
+    consumer.close()
+
+
+================================================
+File: db.json
+================================================
+{
+    "locations": [
+      { "id": 1, "name": "New York", "country": "USA", "latitude": 40.7128, "longitude": -74.0060 },
+      { "id": 2, "name": "London", "country": "UK", "latitude": 51.5074, "longitude": -0.1278 },
+      { "id": 3, "name": "Tokyo", "country": "Japan", "latitude": 35.6762, "longitude": 139.6503 },
+      { "id": 4, "name": "Sydney", "country": "Australia", "latitude": -33.8688, "longitude": 151.2093 },
+      { "id": 5, "name": "Rio de Janeiro", "country": "Brazil", "latitude": -22.9068, "longitude": -43.1729 }
+    ],
+  
+    "weather_stations": [
+      { "id": 1, "locationId": 1, "name": "NYC Central Park" },
+      { "id": 2, "locationId": 1, "name": "NYC JFK Airport" },
+      { "id": 3, "locationId": 2, "name": "London Heathrow" },
+      { "id": 4, "locationId": 3, "name": "Tokyo Shinjuku" },
+      { "id": 5, "locationId": 4, "name": "Sydney Observatory" },
+      { "id": 6, "locationId": 5, "name": "Rio Downtown" }
+    ],
+  
+    "weather_data": [
+      {
+        "id": 1,
+        "stationId": 1,
+        "timestamp": "2025-04-15T08:00:00",
+        "temperature": 22.5,
+        "humidity": 65,
+        "pressure": 1012.3,
+        "wind_speed": 5.2,
+        "wind_direction": "NE",
+        "precipitation": 0
+      },
+      {
+        "id": 2,
+        "stationId": 3,
+        "timestamp": "2025-04-15T08:00:00", 
+        "temperature": 18.2,
+        "humidity": 72,
+        "pressure": 1008.7,
+        "wind_speed": 7.8,
+        "wind_direction": "SW",
+        "precipitation": 1.2
+      }
+    ],
+  
+    "alerts": [
+      {
+        "id": 1,
+        "locationId": 1,
+        "alert_type": "high_temperature",
+        "severity": "moderate",
+        "message": "Unusually high temperatures expected",
+        "start_time": "2025-04-15T12:00:00",
+        "end_time": "2025-04-15T20:00:00"
+      },
+      {
+        "id": 2,
+        "locationId": 3,
+        "alert_type": "heavy_rain",
+        "severity": "severe",
+        "message": "Heavy rainfall warning",
+        "start_time": "2025-04-16T06:00:00",
+        "end_time": "2025-04-16T18:00:00"
+      }
+    ],
+  
+    "forecast": [
+      {
+        "id": 1,
+        "locationId": 1,
+        "date": "2025-04-16",
+        "high_temp": 25.3,
+        "low_temp": 18.7,
+        "humidity": 68,
+        "conditions": "partly cloudy",
+        "precipitation_chance": 20
+      },
+      {
+        "id": 2,
+        "locationId": 2,
+        "date": "2025-04-16",
+        "high_temp": 19.8,
+        "low_temp": 12.5,
+        "humidity": 75,
+        "conditions": "light rain",
+        "precipitation_chance": 60
+      }
+    ]
+  }
+
+
+================================================
+File: docker-compose.yml
+================================================
+services:
+  kafka:
+    image: apache/kafka
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    networks:
+      - weather-network
+
+  mysql:
+    image: mysql:latest
+    container_name: mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=password
+      - MYSQL_DATABASE=weather_monitoring
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_dbt_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - weather-network
+
+  json-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: json-server
+    ports:
+      - "3000:3000"
+    networks:
+      - weather-network
+      
+  spark:
+    image: bitnami/spark:3.4.1
+    container_name: spark
+    user: root
+    environment:
+      - SPARK_MODE=master
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+      - "4040:4040"
+    volumes:
+      - ./spark:/opt/spark
+    networks:
+      - weather-network
+
+networks:
+  weather-network:
+    driver: bridge
+
+volumes:
+  mysql_dbt_data:
+
+
+
+================================================
+File: init.sql
+================================================
+-- Create the database
+CREATE DATABASE IF NOT EXISTS weather_monitoring;
+USE weather_monitoring;
+
+-- Weather readings table
+CREATE TABLE IF NOT EXISTS weather_readings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    station_id INT NOT NULL,
+    location VARCHAR(100) NOT NULL,
+    timestamp DATETIME NOT NULL,
+    temperature DECIMAL(5,2),
+    humidity INT,
+    pressure DECIMAL(6,1),
+    wind_speed DECIMAL(5,1),
+    wind_direction VARCHAR(2),
+    precipitation DECIMAL(5,1),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Weather alerts table
+CREATE TABLE IF NOT EXISTS weather_alerts (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    location_id INT NOT NULL,
+    location VARCHAR(100) NOT NULL,
+    alert_type VARCHAR(50) NOT NULL,
+    severity VARCHAR(20) NOT NULL,
+    message TEXT,
+    start_time DATETIME NOT NULL,
+    end_time DATETIME NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Weather forecasts table
+CREATE TABLE IF NOT EXISTS weather_forecasts (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    location_id INT NOT NULL,
+    location VARCHAR(100) NOT NULL,
+    forecast_date DATE NOT NULL,
+    high_temp DECIMAL(5,2),
+    low_temp DECIMAL(5,2),
+    humidity INT,
+    conditions VARCHAR(50),
+    precipitation_chance INT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
+================================================
+File: producer.py
+================================================
+import json
+from confluent_kafka import Producer
+
+KAFKA_BROKER = "localhost:9092"
+TOPIC_WEATHER_DATA = "weather_data"
+TOPIC_ALERTS = "weather_alerts"
+TOPIC_FORECAST = "weather_forecast"
+
+producer = Producer({"bootstrap.servers": KAFKA_BROKER})
+
+def log_weather_data(station_id, location_name, data):
+    """Log weather data readings to Kafka."""
+    log_data = {
+        "event": "Weather Reading",
+        "station_id": station_id,
+        "location": location_name,
+        "data": data
+    }
+    message = json.dumps(log_data).encode("utf-8")
+    producer.produce(TOPIC_WEATHER_DATA, value=message)
+    producer.flush()
+    print(f"Sent to Kafka ({TOPIC_WEATHER_DATA}): Weather reading from {location_name}")
+
+def log_weather_alert(location_id, location_name, alert_data):
+    """Log weather alerts to Kafka."""
+    log_data = {
+        "event": "Weather Alert",
+        "location_id": location_id,
+        "location": location_name,
+        "alert": alert_data
+    }
+    message = json.dumps(log_data).encode("utf-8")
+    producer.produce(TOPIC_ALERTS, value=message)
+    producer.flush()
+    print(f"Sent to Kafka ({TOPIC_ALERTS}): Alert for {location_name}")
+
+def log_weather_forecast(location_id, location_name, forecast_data):
+    """Log weather forecasts to Kafka."""
+    log_data = {
+        "event": "Weather Forecast",
+        "location_id": location_id,
+        "location": location_name,
+        "forecast": forecast_data
+    }
+    message = json.dumps(log_data).encode("utf-8")
+    producer.produce(TOPIC_FORECAST, value=message)
+    producer.flush()
+    print(f"Sent to Kafka ({TOPIC_FORECAST}): Forecast for {location_name}")
+
+
+================================================
+File: read_parquet.py
+================================================
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName("ReadParquet").getOrCreate()
+df = spark.read.parquet("/opt/spark/data/avg_temp")
+print("Data from parquet file:")
+df.show()
+spark.stop()
+
+
+
+================================================
+File: simulate_weather.py
+================================================
+import threading
+import random
+import time
+import json
+from datetime import datetime, timedelta
+from producer import log_weather_data, log_weather_alert, log_weather_forecast
+
+# Basic data for simulation
+LOCATIONS = [
+    {"id": 1, "name": "New York", "country": "USA"},
+    {"id": 2, "name": "London", "country": "UK"},
+    {"id": 3, "name": "Tokyo", "country": "Japan"},
+    {"id": 4, "name": "Sydney", "country": "Australia"},
+    {"id": 5, "name": "Rio de Janeiro", "country": "Brazil"}
+]
+
+STATIONS = [
+    {"id": 1, "locationId": 1, "name": "NYC Central Park"},
+    {"id": 2, "locationId": 1, "name": "NYC JFK Airport"},
+    {"id": 3, "locationId": 2, "name": "London Heathrow"},
+    {"id": 4, "locationId": 3, "name": "Tokyo Shinjuku"},
+    {"id": 5, "locationId": 4, "name": "Sydney Observatory"},
+    {"id": 6, "locationId": 5, "name": "Rio Downtown"}
+]
+
+# Counter for total readings
+READING_COUNT = 0
+LOCK = threading.Lock()
+
+def get_location_for_station(station_id):
+    """Get location details for a given station."""
+    station = next((s for s in STATIONS if s["id"] == station_id), None)
+    if station:
+        location = next((l for l in LOCATIONS if l["id"] == station["locationId"]), None)
+        return location
+    return None
+
+def generate_weather_reading():
+    """Generate a random weather reading for a random station."""
+    global READING_COUNT
+    
+    # Select a random station
+    station = random.choice(STATIONS)
+    station_id = station["id"]
+    
+    # Get location for this station
+    location = get_location_for_station(station_id)
+    location_name = location["name"] if location else "Unknown"
+    
+    # Generate weather data
+    weather_data = {
+        "stationId": station_id,
+        "timestamp": datetime.now().isoformat(),
+        "temperature": round(random.uniform(10.0, 35.0), 1),
+        "humidity": random.randint(30, 90),
+        "pressure": round(random.uniform(990.0, 1020.0), 1),
+        "wind_speed": round(random.uniform(0, 20.0), 1),
+        "wind_direction": random.choice(["N", "NE", "E", "SE", "S", "SW", "W", "NW"]),
+        "precipitation": round(random.uniform(0, 5.0), 1)
+    }
+    
+    # Log to Kafka
+    log_weather_data(station_id, location_name, weather_data)
+    
+    with LOCK:
+        READING_COUNT += 1
+        
+    print(f"Generated weather reading for {location_name}, Station #{station_id}")
+    return weather_data
+
+def generate_weather_alert():
+    """Generate a random weather alert for a random location."""
+    location = random.choice(LOCATIONS)
+    location_id = location["id"]
+    location_name = location["name"]
+    
+    # Alert types with corresponding severities
+    alert_types = {
+        "high_temperature": ["moderate", "severe"],
+        "low_temperature": ["moderate", "severe"],
+        "heavy_rain": ["moderate", "severe", "extreme"],
+        "thunderstorm": ["moderate", "severe"],
+        "high_wind": ["moderate", "severe"],
+        "fog": ["moderate"]
+    }
+    
+    alert_type = random.choice(list(alert_types.keys()))
+    severity = random.choice(alert_types[alert_type])
+    
+    # Create alert messages based on type
+    messages = {
+        "high_temperature": f"Unusually high temperatures expected in {location_name}",
+        "low_temperature": f"Cold weather warning for {location_name}",
+        "heavy_rain": f"Heavy rainfall warning for {location_name}",
+        "thunderstorm": f"Thunderstorm warning for {location_name}",
+        "high_wind": f"High wind warning for {location_name}",
+        "fog": f"Dense fog expected in {location_name}"
+    }
+    
+    # Random duration between 3-12 hours
+    start_time = datetime.now()
+    end_time = start_time + timedelta(hours=random.randint(3, 12))
+    
+    alert_data = {
+        "locationId": location_id,
+        "alert_type": alert_type,
+        "severity": severity,
+        "message": messages[alert_type],
+        "start_time": start_time.isoformat(),
+        "end_time": end_time.isoformat()
+    }
+    
+    # Log to Kafka
+    log_weather_alert(location_id, location_name, alert_data)
+    print(f"Generated weather alert for {location_name}: {alert_type} ({severity})")
+    return alert_data
+
+def generate_weather_forecast():
+    """Generate a random weather forecast for a random location."""
+    location = random.choice(LOCATIONS)
+    location_id = location["id"]
+    location_name = location["name"]
+    
+    # Weather conditions with associated precipitation chances
+    conditions = {
+        "sunny": (0, 10),
+        "partly cloudy": (10, 30),
+        "cloudy": (30, 50),
+        "light rain": (50, 70),
+        "heavy rain": (70, 90),
+        "thunderstorm": (80, 100)
+    }
+    
+    condition = random.choice(list(conditions.keys()))
+    precip_range = conditions[condition]
+    
+    # Generate forecast for the next day
+    forecast_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    
+    forecast_data = {
+        "locationId": location_id,
+        "date": forecast_date,
+        "high_temp": round(random.uniform(15.0, 35.0), 1),
+        "low_temp": round(random.uniform(5.0, 20.0), 1),
+        "humidity": random.randint(30, 90),
+        "conditions": condition,
+        "precipitation_chance": random.randint(precip_range[0], precip_range[1])
+    }
+    
+    # Log to Kafka
+    log_weather_forecast(location_id, location_name, forecast_data)
+    print(f"Generated forecast for {location_name} on {forecast_date}: {condition}")
+    return forecast_data
+
+def simulate_weather_system():
+    """Continuously generate random weather data and send to Kafka topics."""
+    global READING_COUNT
+    
+    print("Starting weather simulation...")
+    
+    while True:
+        # Generate weather reading (Topic 1)
+        thread_reading = threading.Thread(target=generate_weather_reading)
+        thread_reading.start()
+        
+        # Every 5 readings, generate an alert (Topic 2)
+        with LOCK:
+            if READING_COUNT % 5 == 0 and READING_COUNT > 0:
+                thread_alert = threading.Thread(target=generate_weather_alert)
+                thread_alert.start()
+        
+        # Every 10 readings, generate a forecast (Topic 3)
+        with LOCK:
+            if READING_COUNT % 10 == 0 and READING_COUNT > 0:
+                thread_forecast = threading.Thread(target=generate_weather_forecast)
+                thread_forecast.start()
+        
+        # Random delay between generations
+        time.sleep(random.uniform(2, 5))
+
+if __name__ == "__main__":
+    simulate_weather_system()
+
+
+================================================
+File: stream.sh
+================================================
+#!/bin/bash
+docker exec spark spark-submit \
+  --master local[*] \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.1 \
+  --jars /opt/spark/jars/mysql-connector-j-8.0.33.jar \
+  --driver-class-path /opt/spark/jars/mysql-connector-j-8.0.33.jar \
+  /opt/spark/apps/streaming.py
+
+
+
+================================================
+File: spark/apps/batch.py
+================================================
+from pyspark.sql import SparkSession
+
+
+def main():
+    """Main function to run the batch job"""
+
+    # Create Spark session
+    spark = SparkSession.builder.appName("WeatherBatch").getOrCreate()
+
+    try:
+        # Read data from MySQL
+        jdbc_url = "jdbc:mysql://mysql:3306/weather_monitoring"
+
+        # Weather readings
+        weather_df = (
+            spark.read.format("jdbc")
+            .option("url", jdbc_url)
+            .option("dbtable", "weather_readings")
+            .option("user", "root")
+            .option("password", "password")
+            .option("driver", "com.mysql.cj.jdbc.Driver")
+            .load()
+        )
+
+        # Register as temp view
+        weather_df.createOrReplaceTempView("weather_readings")
+
+        # Run analytics query
+        avg_temp = spark.sql(
+            """
+            SELECT 
+                location, 
+                AVG(temperature) as avg_temperature,
+                MIN(temperature) as min_temperature,
+                MAX(temperature) as max_temperature
+            FROM weather_readings
+            GROUP BY location
+        """
+        )
+
+        # Show results
+        print("Average Temperature by Location:")
+        avg_temp.show()
+
+        # Save results
+        avg_temp.write.mode("overwrite").parquet("/opt/spark/data/avg_temp")
+
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        spark.stop()
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+================================================
+File: spark/apps/streaming.py
+================================================
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, from_json
+from pyspark.sql.types import (
+    DoubleType,
+    IntegerType,
+    StringType,
+    StructField,
+    StructType,
+)
+
+
+def main():
+    """Main function to run the streaming job"""
+
+    # Create Spark session
+    spark = SparkSession.builder.appName("WeatherStreaming").getOrCreate()
+
+    # Set log level
+    spark.sparkContext.setLogLevel("WARN")
+
+    try:
+        # Define schema for weather data
+        weather_schema = StructType(
+            [
+                StructField("event", StringType(), True),
+                StructField("station_id", IntegerType(), True),
+                StructField("location", StringType(), True),
+                StructField(
+                    "data",
+                    StructType(
+                        [
+                            StructField("timestamp", StringType(), True),
+                            StructField("temperature", DoubleType(), True),
+                            StructField("humidity", IntegerType(), True),
+                            StructField("pressure", DoubleType(), True),
+                            StructField("wind_speed", DoubleType(), True),
+                            StructField("wind_direction", StringType(), True),
+                            StructField("precipitation", DoubleType(), True),
+                        ]
+                    ),
+                    True,
+                ),
+            ]
+        )
+
+        # Read from Kafka
+        kafka_df = (
+            spark.readStream.format("kafka")
+            .option("kafka.bootstrap.servers", "kafka:9092")
+            .option("subscribe", "weather_data")
+            .option("startingOffsets", "latest")
+            .load()
+        )
+
+        # Parse JSON from Kafka
+        weather_df = (
+            kafka_df.selectExpr("CAST(value AS STRING) as json")
+            .select(from_json(col("json"), weather_schema).alias("data"))
+            .select("data.*")
+        )
+
+        # Output to console
+        query = weather_df.writeStream.outputMode("append").format("console").start()
+
+        query.awaitTermination()
+
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        spark.stop()
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+================================================
+File: spark/data/avg_temp/_SUCCESS
+================================================
+
+
+
+================================================
+File: spark/data/avg_temp/part-00000-e795a0f3-b791-4788-83ae-6a3d9bef919f-c000.snappy.parquet
+================================================
+[Non-text file]
+
+
+================================================
+File: spark/data/avg_temp/._SUCCESS.crc
+================================================
+[Non-text file]
+
+
+================================================
+File: spark/data/avg_temp/.part-00000-e795a0f3-b791-4788-83ae-6a3d9bef919f-c000.snappy.parquet.crc
+================================================
+[Non-text file]
+
+

@@ -1,27 +1,51 @@
 services:
+  # Existing services
   kafka:
-    image: apache/kafka
-    container_name: kafka_dbt
+    image: bitnami/kafka:latest
+    container_name: kafka
     ports:
       - "9092:9092"
     environment:
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_PROCESS_ROLES=broker,controller
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
       - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_KRAFT_CLUSTER_ID=5L6g3nShT-eMCtK--X86sw
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
     networks:
       - weather-network
+    healthcheck:
+      test: kafka-topics.sh --bootstrap-server kafka:9092 --list
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
+  # MySQL
   mysql:
-    image: mysql:latest
-    container_name: mysql
+    image: mysql:8.0
+    container_name: mysql-container
     environment:
-      - MYSQL_ROOT_PASSWORD=password
-      - MYSQL_DATABASE=weather_monitoring
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: weather_monitoring
+      MYSQL_ROOT_HOST: '%'
+    command: --default-authentication-plugin=mysql_native_password
     ports:
       - "3307:3306"
     volumes:
-      - mysql_dbt_data:/var/lib/mysql
+      - mysql_data_new:/var/lib/mysql  # Use a different volume name
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - weather-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ppassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   json-server:
     build:
@@ -45,12 +69,64 @@ services:
       - "4040:4040"
     volumes:
       - ./spark:/opt/spark
+      - ./batch.sh:/opt/spark/batch.sh
+      - ./stream.sh:/opt/spark/stream.sh
     networks:
       - weather-network
+    depends_on:
+      - kafka
+      - mysql
+
+  # New services
+  producer:
+    build:
+      context: .
+      dockerfile: Dockerfile.producer
+    container_name: producer-container
+    networks:
+      - weather-network
+    environment:
+      - KAFKA_BROKER=kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile.consumer
+    container_name: consumer-container
+    networks:
+      - weather-network
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - MYSQL_HOST=mysql-container
+      - MYSQL_PORT=3306
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=password
+      - MYSQL_DATABASE=weather_monitoring
+    depends_on:
+      kafka:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+
+  simulate-weather:
+    build:
+      context: .
+      dockerfile: Dockerfile.simulate
+    container_name: simulate-weather-container
+    networks:
+      - weather-network
+    environment:
+      - KAFKA_BROKER=kafka:9092
+    depends_on:
+      - kafka
+      - producer
 
 networks:
   weather-network:
     driver: bridge
 
 volumes:
-  mysql_dbt_data:
+  mysql_data_new:
