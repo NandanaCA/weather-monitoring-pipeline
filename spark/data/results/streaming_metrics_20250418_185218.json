@@ -1,0 +1,207 @@
+{
+  "mode": "streaming",
+  "start_time": "2025-04-18 18:51:15",
+  "batches": [
+    {
+      "operation": "extreme_conditions",
+      "batch_id": 0,
+      "timestamp": "2025-04-18 18:51:27",
+      "processing_time": 4.552450895309448,
+      "records": 0,
+      "records_per_second": 0.0
+    },
+    {
+      "operation": "window_aggregation",
+      "batch_id": 0,
+      "timestamp": "2025-04-18 18:51:28",
+      "processing_time": 6.099657297134399,
+      "records": 0,
+      "records_per_second": 0.0
+    },
+    {
+      "operation": "alerts",
+      "batch_id": 0,
+      "timestamp": "2025-04-18 18:51:29",
+      "processing_time": 4.487966060638428,
+      "records": 0,
+      "records_per_second": 0.0
+    },
+    {
+      "operation": "extreme_conditions",
+      "batch_id": 1,
+      "timestamp": "2025-04-18 18:51:31",
+      "processing_time": 4.31719708442688,
+      "records": 1,
+      "records_per_second": 0.23163176951249906
+    },
+    {
+      "operation": "window_aggregation",
+      "batch_id": 1,
+      "timestamp": "2025-04-18 18:51:32",
+      "processing_time": 3.677399158477783,
+      "records": 1,
+      "records_per_second": 0.2719313180062668
+    },
+    {
+      "operation": "extreme_conditions",
+      "batch_id": 2,
+      "timestamp": "2025-04-18 18:51:35",
+      "processing_time": 3.465632200241089,
+      "records": 2,
+      "records_per_second": 0.5770952843353858
+    },
+    {
+      "operation": "window_aggregation",
+      "batch_id": 2,
+      "timestamp": "2025-04-18 18:51:38",
+      "processing_time": 5.318873643875122,
+      "records": 2,
+      "records_per_second": 0.3760194608689517
+    },
+    {
+      "operation": "alerts",
+      "batch_id": 1,
+      "timestamp": "2025-04-18 18:51:39",
+      "processing_time": 5.445047855377197,
+      "records": 1,
+      "records_per_second": 0.18365311500659465
+    },
+    {
+      "operation": "extreme_conditions",
+      "batch_id": 3,
+      "timestamp": "2025-04-18 18:51:43",
+      "processing_time": 6.401669263839722,
+      "records": 1,
+      "records_per_second": 0.15620925711494815
+    },
+    {
+      "operation": "window_aggregation",
+      "batch_id": 3,
+      "timestamp": "2025-04-18 18:51:44",
+      "processing_time": 5.620614767074585,
+      "records": 1,
+      "records_per_second": 0.17791648092624565
+    },
+    {
+      "operation": "extreme_conditions",
+      "batch_id": 4,
+      "timestamp": "2025-04-18 18:51:46",
+      "processing_time": 3.0062270164489746,
+      "records": 1,
+      "records_per_second": 0.33264287578029395
+    },
+    {
+      "operation": "window_aggregation",
+      "batch_id": 4,
+      "timestamp": "2025-04-18 18:51:50",
+      "processing_time": 5.306744337081909,
+      "records": 2,
+      "records_per_second": 0.37687890596586887
+    },
+    {
+      "operation": "extreme_conditions",
+      "batch_id": 5,
+      "timestamp": "2025-04-18 18:51:52",
+      "processing_time": 5.819803714752197,
+      "records": 1,
+      "records_per_second": 0.1718271008805972
+    },
+    {
+      "operation": "alerts",
+      "batch_id": 2,
+      "timestamp": "2025-04-18 18:51:54",
+      "processing_time": 5.435728073120117,
+      "records": 2,
+      "records_per_second": 0.36793599184809783
+    },
+    {
+      "operation": "window_aggregation",
+      "batch_id": 5,
+      "timestamp": "2025-04-18 18:51:57",
+      "processing_time": 5.574325799942017,
+      "records": 1,
+      "records_per_second": 0.17939389190534968
+    },
+    {
+      "operation": "extreme_conditions",
+      "batch_id": 6,
+      "timestamp": "2025-04-18 18:51:59",
+      "processing_time": 5.57607626914978,
+      "records": 2,
+      "records_per_second": 0.3586751513900926
+    },
+    {
+      "operation": "window_aggregation",
+      "batch_id": 6,
+      "timestamp": "2025-04-18 18:52:01",
+      "processing_time": 3.627612590789795,
+      "records": 2,
+      "records_per_second": 0.5513267886096307
+    },
+    {
+      "operation": "extreme_conditions",
+      "batch_id": 7,
+      "timestamp": "2025-04-18 18:52:03",
+      "processing_time": 3.9180972576141357,
+      "records": 1,
+      "records_per_second": 0.25522592581301423
+    },
+    {
+      "operation": "window_aggregation",
+      "batch_id": 7,
+      "timestamp": "2025-04-18 18:52:05",
+      "processing_time": 3.337528705596924,
+      "records": 1,
+      "records_per_second": 0.29962289112990503
+    },
+    {
+      "operation": "extreme_conditions",
+      "batch_id": 8,
+      "timestamp": "2025-04-18 18:52:07",
+      "processing_time": 3.6338279247283936,
+      "records": 1,
+      "records_per_second": 0.27519189700616986
+    },
+    {
+      "operation": "window_aggregation",
+      "batch_id": 8,
+      "timestamp": "2025-04-18 18:52:11",
+      "processing_time": 5.075558423995972,
+      "records": 1,
+      "records_per_second": 0.19702265572833325
+    },
+    {
+      "operation": "extreme_conditions",
+      "batch_id": 9,
+      "timestamp": "2025-04-18 18:52:13",
+      "processing_time": 5.583717584609985,
+      "records": 0,
+      "records_per_second": 0.0
+    },
+    {
+      "operation": "alerts",
+      "batch_id": 3,
+      "timestamp": "2025-04-18 18:52:14",
+      "processing_time": 5.039881944656372,
+      "records": 3,
+      "records_per_second": 0.5952520382309362
+    },
+    {
+      "operation": "window_aggregation",
+      "batch_id": 9,
+      "timestamp": "2025-04-18 18:52:17",
+      "processing_time": 5.400465250015259,
+      "records": 1,
+      "records_per_second": 0.1851692314837457
+    },
+    {
+      "operation": "extreme_conditions",
+      "batch_id": 10,
+      "timestamp": "2025-04-18 18:52:18",
+      "processing_time": 5.172956466674805,
+      "records": 1,
+      "records_per_second": 0.19331305152908113
+    }
+  ],
+  "last_updated": "2025-04-18 18:52:18"
+}

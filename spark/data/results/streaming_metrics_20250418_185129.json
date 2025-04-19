@@ -1,0 +1,31 @@
+{
+  "mode": "streaming",
+  "start_time": "2025-04-18 18:51:15",
+  "batches": [
+    {
+      "operation": "extreme_conditions",
+      "batch_id": 0,
+      "timestamp": "2025-04-18 18:51:27",
+      "processing_time": 4.552450895309448,
+      "records": 0,
+      "records_per_second": 0.0
+    },
+    {
+      "operation": "window_aggregation",
+      "batch_id": 0,
+      "timestamp": "2025-04-18 18:51:28",
+      "processing_time": 6.099657297134399,
+      "records": 0,
+      "records_per_second": 0.0
+    },
+    {
+      "operation": "alerts",
+      "batch_id": 0,
+      "timestamp": "2025-04-18 18:51:29",
+      "processing_time": 4.487966060638428,
+      "records": 0,
+      "records_per_second": 0.0
+    }
+  ],
+  "last_updated": "2025-04-18 18:51:29"
+}

@@ -158,25 +158,20 @@ def simulate_weather_system():
     
     print("Starting weather simulation...")
     
-    while True:
-        # Generate weather reading (Topic 1)
-        thread_reading = threading.Thread(target=generate_weather_reading)
-        thread_reading.start()
-        
-        # Every 5 readings, generate an alert (Topic 2)
-        with LOCK:
-            if READING_COUNT % 5 == 0 and READING_COUNT > 0:
-                thread_alert = threading.Thread(target=generate_weather_alert)
-                thread_alert.start()
-        
-        # Every 10 readings, generate a forecast (Topic 3)
-        with LOCK:
-            if READING_COUNT % 10 == 0 and READING_COUNT > 0:
-                thread_forecast = threading.Thread(target=generate_weather_forecast)
-                thread_forecast.start()
+while True:
+    # Generate 5 weather readings in parallel
+    for _ in range(5):
+        threading.Thread(target=generate_weather_reading).start()
+
+    # Generate alerts and forecasts based on count
+    with LOCK:
+        if READING_COUNT % 5 == 0 and READING_COUNT > 0:
+            threading.Thread(target=generate_weather_alert).start()
+        if READING_COUNT % 10 == 0 and READING_COUNT > 0:
+            threading.Thread(target=generate_weather_forecast).start()
         
         # Random delay between generations
-        time.sleep(random.uniform(2, 5))
+        time.sleep(random.uniform(0.005, 0.01))
 
 if __name__ == "__main__":
     simulate_weather_system()
